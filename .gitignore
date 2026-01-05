@@ -1,0 +1,18 @@
+# 忽略 Python 缓存
+__pycache__/
+*.pyc
+
+# 忽略数据集（通常太大，GitHub 传不上去）
+dataset/
+*.zip
+*.tar.gz
+
+# 忽略训练结果和日志（看你需要保留吗，太大的话就忽略）
+runs/
+results/
+*.pth
+*.pt
+
+# 忽略系统文件
+.DS_Store
+.vscode/
