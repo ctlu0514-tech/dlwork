@@ -31,16 +31,10 @@ def choosezero(image):
     """
     image[image == 0] = 0.001
     return image
-def extract_file_names(serial, folder_path):
-    # 安全检查：如果文件夹都不存在，直接返回None
-    if not os.path.exists(folder_path):
-        return None
-    
+def extract_file_names(serial,folder_path):
     for file_name in os.listdir(folder_path):
-        # 只要文件名包含序列名 (如 'CT') 且以 .nii.gz 结尾
-        if serial in file_name and file_name.endswith('.nii.gz'):
+        if serial in file_name and "img.nii.gz" in file_name:
             return file_name
-    return None
 def irm_min_max_preprocess(img, low_perc=1, high_perc=99): #异常值处理与归一化操作
     """Main pre-processing function used for the challenge (seems to work the best).
 
@@ -61,68 +55,62 @@ class bal_Dataset(data.Dataset):
     """
     dataloader for ovarian cancer image data
     """
-    def __init__(self, image_root, csv_file, transforms=None, task='label', is_train=True):
+    def __init__(self, image_root, csv_file, transforms=None, task='label',is_train=True):
         self.root = image_root
         self.datas = []
         self.dr = []
         self.transforms = transforms
-        
-        # 1. 设定我们要读取的 4 个模态 (去掉了 PET，只保留 CT 和 MRI)
-        # 如果你想用 PET，可以在列表里加上 'PET'
-        Serial = ['ADC', 'DWI', 'T2', 'CT']
-        
-        # 2. 定义两个数据源文件夹的绝对路径
-        # image_root 就是你传入的 /nfs/zc1/qianliexian/dataset/
-        mri_dir = os.path.join(self.root, 'mpMri_nii')
-        petct_dir = os.path.join(self.root, 'PETCT_nii')
-
+        label = ['0','1']
+        Serial = ['ADC', 'DWI', 'T2FS', 'CT']
+        #Serial = ['ADC', 'DWI', 'T2FS']
+        #Serial = [ 'CT', 'PET']
         for row in csv_file:
-            patient_id = str(row['id']) # 确保转为字符串
-            patient_label = row['isup2'] # 确保这里是你 CSV 里的标签列名
-            
+            patient_id = row['id']
+            patient_label = row['isup2']
+            #patient_age = row['Age']
+            #patient_height = row['height']
+            #patient_weight = row['weight']
+            #patient_tpsa1 = row['first_tPSA']
+            #patient_tpsa2 = row['pre_tPSA']
             images = []
-            missing_info = "" # 记录缺了啥
-            
             for serial in Serial:
-                # 3. 核心分流逻辑：CT 去 PETCT_nii 找，其他的去 mpMri_nii 找
-                if serial == 'CT' or serial == 'PET':
-                    current_root = petct_dir
-                else:
-                    current_root = mri_dir
-                
-                # 拼接病人文件夹: .../PETCT_nii/1002
-                patient_folder = os.path.join(current_root, patient_id)
-                
-                # 调用上面的函数查找文件
-                niiname = extract_file_names(serial, patient_folder)
-                
-                if niiname is None:
-                    # 如果找不到，记录下来方便调试
-                    missing_info = f"{serial} in {patient_folder}"
-                    break # 只要缺一个，这个病人就不能用了，跳出循环
+                image_file1 = os.path.join(image_root, patient_id)
+                #print(image_file1)
+                niiname = extract_file_names(serial, image_file1)
+                #print(niiname)
+                image_file = os.path.join(image_file1, niiname)
+                image = sitk.GetArrayFromImage(sitk.ReadImage(str(image_file)))
+                # image = np.transpose(image,(1,2,0))
+                # output_shape = [8,64,64]
+                # ori_size = image.shape
+                # image = zoom(image, (output_shape[0]/ori_size[0], output_shape[1]/ori_size[1], output_shape[2]/ori_size[2]))
+                images.append(image)
+            # patient_invol = row['cortical involvement']
+          
+            # meta = np.array((row['volume']), dtype=np.float32).reshape(1,)
+            # meta = np.array((row['nihss'],row['earlyseizures'],row['volume'],row['majorlocation']), dtype=np.float32)
+            # meta = np.array((row['majorlocation']), dtype=np.float32).reshape(1,)
+            
+            
+            # image_path = os.path.join(image_root, 'image', f'{patient_id}.nii')
+            # image_crop_path = os.path.join(image_root, 'image_crop', f'{patient_id}.nii')
+            
+            if task =='label':
+                label = float(patient_label)
+                # invol = float(patient_invol) # str change to float for having attribute 'cuda'
 
-                image_file = os.path.join(patient_folder, niiname)
-                
-                # 读取图像
-                try:
-                    image = sitk.GetArrayFromImage(sitk.ReadImage(str(image_file))).astype(np.float32)
-                    images.append(image)
-                except:
-                    missing_info = f"ReadError {image_file}"
-                    break
+            # image = sitk.GetArrayFromImage(sitk.ReadImage(str(image_path)))
+            # image_crop = sitk.GetArrayFromImage(sitk.ReadImage(str(image_crop_path)))
+            
+            self.dr.append(int(label))
 
-            # 4. 只有集齐 4 个模态才加入训练列表
-            if len(images) == 4:
-                if task =='label':
-                    label = float(patient_label)
-                
-                self.dr.append(int(label))
-                patient = dict(id=patient_id, images=images, label=label)
-                self.datas.append(patient)
-            else:
-                # 打印被跳过的病人 (前几次打印，防止刷屏)
-                # 这样你就能看到到底是因为缺文件，还是路径拼错了
-                print(f"Skipping {patient_id}: Missing {missing_info}")
+            patient = dict(id=patient_id,  images = images, label = label)
+            '''
+            patient = dict(id=patient_id,  images = images, age=patient_age, height=patient_height, weight=patient_weight,
+                      tpsa1=patient_tpsa1, tpsa2=patient_tpsa2, label = label)
+            '''
+            self.datas.append(patient)
+
 
     def __getitem__(self, index, is_train=True):
         
@@ -173,7 +161,6 @@ class bal_Dataset(data.Dataset):
         img = np.array(img)
         img = img.astype(np.float32)
         img_normalize = irm_min_max_preprocess(img)
-        img_normalize = img_normalize.astype(np.float32)
         dr = self.dr[index]
         return  dict(patient_id = _patient["id"],
                      all=img_normalize,
@@ -186,6 +173,7 @@ class bal_Dataset(data.Dataset):
                      all=img_normalize,
                      label = label
                     )
+        
         return  dict(patient_id = _patient["id"],age=age,height=height,weight=weight,tpsa1=tpsa1,tpsa2=tpsa2,
                      ADC=img_normalize[0:1], DWI=img_normalize[1:2], T2FS=img_normalize[2:3],CT=img_normalize[3:4],
                      PET=img_normalize[4:5],

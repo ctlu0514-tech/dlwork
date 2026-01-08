@@ -16,3 +16,9 @@ results/
 # 忽略系统文件
 .DS_Store
 .vscode/
+
+Dataset_crop/
+__pycache__/
+*.pth
+runs/
+results/

@@ -59,7 +59,7 @@ def get_arch(model_name, attention='false', input_channels=5):
     elif model_name == 'cotnet50':
         model = cotnet50(input_channels=input_channels)
     elif model_name == 'vit':
-        model = VIT(image_size=64, patch_size=8, num_classes=2, dim=128, depth=6, heads=8, mlp_dim=256)
+        model = VIT(image_size=64, patch_size=8, num_classes=2, dim=128, depth=6, heads=8, mlp_dim=256, channels=input_channels)
     elif model_name == 'vgg':
         model = VGG_Net()
     elif model_name == 'SwinTransformer':

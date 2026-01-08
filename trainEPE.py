@@ -1,5 +1,11 @@
 # -*- coding: utf-8 -*-
 import os
+# 设置一个新的临时文件夹路径（在你那个剩余 904G 的大盘里）
+custom_temp_dir = '/data/qh_20T_share_file/lct/CT67/dl_work/tmp_cache'
+# 如果文件夹不存在，自动创建
+os.makedirs(custom_temp_dir, exist_ok=True)
+# 强制告诉系统：把垃圾文件都写到这个大盘里，别去挤 /tmp 了
+os.environ['TMPDIR'] = custom_temp_dir
 import pathlib
 from datetime import datetime
 from tqdm import tqdm
@@ -28,9 +34,9 @@ parser.add_argument('--epoch', type=int, default=300, help='epoch number')
 parser.add_argument('--lr', type=float, default=0.000001, help='learning rate')
 parser.add_argument('--batch_size', type=int, default=16, help='training batch size')
 parser.add_argument('--data_root', type=str,
-                    default='/Dataset/yyp/prostate_ISUP_data/code/Dataset', help='path to train dataset')
+                    default='/data/qh_20T_share_file/lct/CT67/dl_work/Dataset_crop', help='path to train dataset')
 parser.add_argument('--train_save', type=str, default='TransFuse_S')
-parser.add_argument('--devices', default='3', type=str,
+parser.add_argument('--devices', default='0', type=str,
                     help='Set the CUDA_VISIBLE_DEVICES env var from this string') # 输入空的GPU的编号0-7 --device 0-7
 parser.add_argument('-j', '--workers', default=8, type=int, metavar='N',
                     help='number of data loading workers (default: 2).')
@@ -41,7 +47,7 @@ parser.add_argument('--weights', type=str, default='best_model50.pth',
 
 parser.add_argument('--sampling', type=str, default='instance', help='sampling mode (instance, class, sqrt, progmultiprocessing)')
 parser.add_argument('--loss', choices=['BinaryFocalLoss', 'GHMC_Loss', 'WBCEWithLogitLoss','CrossEntropyLoss','WCrossEntropyLoss','LabelSmoothing'], default='CrossEntropyLoss')
-parser.add_argument('--model', choices=['MobileNet', 'MobileNetV3_Small', 'MobileNetV3_Large', 'ShuffleNet', 'DenseNet', 'resnet10', 'resnet18', 'resnet34','resnet50','resnet101','C3D', 'CNN_3D','Att_CNN_3D','LeNet', 'AlexNet','vit','resnext50','Resnext50','cotnet50','resnext101','vgg','SwinTransformer','Densenet36_fgpn'], default='Densenet36_fgpn')
+parser.add_argument('--model', choices=['MobileNet', 'MobileNetV3_Small', 'MobileNetV3_Large', 'ShuffleNet', 'DenseNet', 'resnet10', 'resnet18', 'resnet34','resnet50','resnet101','C3D', 'CNN_3D','Att_CNN_3D','LeNet', 'AlexNet','vit','resnext50','Resnext50','cotnet50','resnext101','vgg','SwinTransformer','Densenet36_fgpn'], default='resnet50')
 parser.add_argument('--model_cla', choices=['MobileNet', 'resnet10', 'resnet18', 'resnet34','resnet50','resnet101','C3D', 'CNN_3D','Att_CNN_3D','LeNet', 'AlexNet','vit'], default='vit')
 # parser.add_argument('--fusion_type', choices=['FeatureFusion', 'LearnedFeatureFusion', 'ProbabilityFusion', 'resnet_3d'], default='resnet_3d')
 parser.add_argument('--attention', choices=['se','cbam', 'nam','AFF','false'], default='false')
@@ -105,7 +111,7 @@ def main(args):
     
     model = get_arch(model_name=args.model, attention=args.attention, input_channels=args.input_channels)
     model = nn.DataParallel(model)
-    model_cla = get_arch(model_name=args.model_cla, attention=args.attention)
+    model_cla = get_arch(model_name=args.model_cla, attention=args.attention, input_channels=args.input_channels)
     
     #seed=42
     #torch.manual_seed(seed)
@@ -161,7 +167,7 @@ def main(args):
         if model_cla is not None:
             model_cla.train()
             _, _, _, _, _  = step(args, train_loader, model_cla, loss_function, optimizer_cla, epoch, args.batch_size,
-                                                 train_steps, scheduler_cla, image_type='image', task='invol',
+                                                 train_steps, scheduler_cla, image_type='all', task='label',
                                                  fusion_meta = False)
             
         model.train()
@@ -230,7 +236,7 @@ def step(args, data_loader, model, loss_function, optimizer, epoch, batchsize, s
     with trange(len(data_loader)) as t:
         for i, batch in enumerate(data_loader):
             
-            inputs = batch[image_type].cuda()
+            inputs = batch[image_type].float().cuda()
 
             labels = batch[task].cuda()
             #age = batch['age'].cuda()
@@ -341,7 +347,7 @@ if __name__ == '__main__':
     os.environ['CUDA_VISIBLE_DEVICES'] = arguments.devices
     fin_result = {}
     if arguments.train_mode == 'Cross_Validation':
-        for i in range(10):
+        for i in range(5):
             arguments.fold = i
             main(arguments)
     else:
