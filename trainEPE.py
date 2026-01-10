@@ -31,7 +31,7 @@ from unbalanced_loss.unbalanced_loss import BinaryFocalLoss, GHMC_Loss, WBCEWith
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--epoch', type=int, default=300, help='epoch number')
-parser.add_argument('--lr', type=float, default=0.000001, help='learning rate')
+parser.add_argument('--lr', type=float, default=0.0001, help='learning rate')
 parser.add_argument('--batch_size', type=int, default=16, help='training batch size')
 parser.add_argument('--data_root', type=str,
                     default='/data/qh_20T_share_file/lct/CT67/dl_work/Dataset_crop', help='path to train dataset')
@@ -214,13 +214,13 @@ def main(args):
             if arguments.fold == 9:
                 average_dict = {key: value / 10 for key, value in fin_result.items()}
                 save_average_csv = os.path.join(args.save_folder, "average_result.csv")
-                f = open(save_average_csv, mode='a', encoding='utf-8', newline='')
-
-                csv_writer = csv.DictWriter(f,
-                                            fieldnames=['accuracy', 'recall', 'f1_score', 'kappa_score', 'sensitivity',
-                                                        'specificity', 'PPV_score', 'NPV_score', 'auc'])
-                csv_writer.writeheader()
-                csv_writer.writerow(average_dict)
+                with open(save_average_csv, mode='a', encoding='utf-8', newline='') as f:
+                    csv_writer = csv.DictWriter(f,
+                                                fieldnames=['accuracy', 'recall', 'f1_score', 'kappa_score', 'sensitivity',
+                                                            'specificity', 'PPV_score', 'NPV_score', 'auc'])
+                    if os.path.getsize(save_average_csv) == 0:
+                        csv_writer.writeheader()
+                    csv_writer.writerow(average_dict)
 
     except KeyboardInterrupt:
         print("Stopping right now!")
@@ -328,12 +328,16 @@ def measure(labels, results, outputs , args):
         sensitivity=sensitivity, specificity=specificity, PPV_score = PPV, NPV_score = NPV
     )
     save_csv = os.path.join(train_folder, f"result_fold{args.fold}.csv")
-    f = open(save_csv, mode='a', encoding='utf-8', newline='')
-
-    csv_writer = csv.DictWriter(f, fieldnames=['accuracy', 'recall', 'f1_score', 'kappa_score', 'sensitivity',
-                                               'specificity','PPV_score','NPV_score'])
-    csv_writer.writeheader()
-    csv_writer.writerow(fin_result)
+    # 使用 with 语句，自动处理关闭和保存
+    with open(save_csv, mode='a', encoding='utf-8', newline='') as f:
+        csv_writer = csv.DictWriter(f, fieldnames=['accuracy', 'recall', 'f1_score', 'kappa_score', 'sensitivity',
+                                                   'specificity','PPV_score','NPV_score'])
+        # 注意：如果是追加模式('a')，一直写header会导致csv里有很多重复表头。
+        # 建议判断文件是否为空再写header，或者干脆手动管理。
+        # 但为了最小改动，先保持原样，只是加上 with
+        if os.path.getsize(save_csv) == 0: # 只有文件为空时才写表头
+             csv_writer.writeheader()
+        csv_writer.writerow(fin_result)
     print('accuracy: %.3f  recall: %.3f  f1_score: %.3f kappa_score: %.3f sensitivity: %.3f specificity: %.3f PPV: %.3f NPV: %.3f' %
           (acc, recall, f1_score, kappa_score, sensitivity, specificity,PPV,NPV))
     
@@ -347,7 +351,7 @@ if __name__ == '__main__':
     os.environ['CUDA_VISIBLE_DEVICES'] = arguments.devices
     fin_result = {}
     if arguments.train_mode == 'Cross_Validation':
-        for i in range(5):
+        for i in range(10):
             arguments.fold = i
             main(arguments)
     else:

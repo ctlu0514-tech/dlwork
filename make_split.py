@@ -15,7 +15,7 @@ ids = df['id'].values
 labels = df['isup2'].values 
 
 # 3. 创建 Stratified K-Fold (分层随机抽样，保证训练/测试集的正负样本比例一致)
-skf = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
+skf = StratifiedKFold(n_splits=10, shuffle=True, random_state=42)
 
 # 4. 分配 Fold 编号 (0, 1, 2, 3, 4)
 df['fold'] = -1
