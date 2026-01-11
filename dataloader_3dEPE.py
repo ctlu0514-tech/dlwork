@@ -1,6 +1,5 @@
 from cProfile import label
 import os
-import sys
 import torch
 import torch.utils.data as data
 import torchvision.transforms as tr
@@ -12,44 +11,9 @@ import pandas as pd
 from torch.utils.data import WeightedRandomSampler,DataLoader
 from sklearn.model_selection import KFold,StratifiedKFold
 import torch.nn.functional as F
-from data_utils_EPE import resize_image
+
 from monai.transforms import EnsureChannelFirst, Compose, RandAffine, RandRotate90, RandFlip, apply_transform, ToTensor, RandGaussianSmooth, RandHistogramShift, GaussianSmooth
 from numpy import array
-
-def normalize(image):
-    """Basic min max scaler.
-    """
-    min_ = np.min(image)
-    max_ = np.max(image)
-    scale = max_ - min_
-    image = (image - min_) / scale
-    return image
-
-
-def choosezero(image):
-    """Preprocess image by handling zero values.
-    """
-    image[image == 0] = 0.001
-    return image
-def extract_file_names(serial,folder_path):
-    for file_name in os.listdir(folder_path):
-        if serial in file_name and "img.nii.gz" in file_name:
-            return file_name
-def irm_min_max_preprocess(img, low_perc=1, high_perc=99): #异常值处理与归一化操作
-    """Main pre-processing function used for the challenge (seems to work the best).
-
-    Remove outliers voxels first, then min-max scale.
-
-    Warnings
-    --------
-    This will not do it channel wise!!
-    """
-    image = choosezero(img)
-    non_zeros = image > 0
-    low, high = np.percentile(image[non_zeros], [low_perc, high_perc])
-    image = np.clip(image, low, high)
-    image = normalize(image)
-    return image
 
 class bal_Dataset(data.Dataset):
     """
@@ -61,257 +25,153 @@ class bal_Dataset(data.Dataset):
         self.dr = []
         self.transforms = transforms
         label = ['0','1']
-        Serial = ['ADC', 'DWI', 'T2FS', 'CT']
-        #Serial = ['ADC', 'DWI', 'T2FS']
-        #Serial = [ 'CT', 'PET']
+        
         for row in csv_file:
             patient_id = row['id']
-            patient_label = row['isup2']
-            #patient_age = row['Age']
-            #patient_height = row['height']
-            #patient_weight = row['weight']
-            #patient_tpsa1 = row['first_tPSA']
-            #patient_tpsa2 = row['pre_tPSA']
-            images = []
-            for serial in Serial:
-                image_file1 = os.path.join(image_root, patient_id)
-                #print(image_file1)
-                niiname = extract_file_names(serial, image_file1)
-                #print(niiname)
-                image_file = os.path.join(image_file1, niiname)
-                image = sitk.GetArrayFromImage(sitk.ReadImage(str(image_file)))
-                # image = np.transpose(image,(1,2,0))
-                # output_shape = [8,64,64]
-                # ori_size = image.shape
-                # image = zoom(image, (output_shape[0]/ori_size[0], output_shape[1]/ori_size[1], output_shape[2]/ori_size[2]))
-                images.append(image)
-            # patient_invol = row['cortical involvement']
+            patient_label = row['label']
+            patient_invol = row['cortical involvement']
           
-            # meta = np.array((row['volume']), dtype=np.float32).reshape(1,)
+            meta = np.array((row['volume']), dtype=np.float32).reshape(1,)
             # meta = np.array((row['nihss'],row['earlyseizures'],row['volume'],row['majorlocation']), dtype=np.float32)
             # meta = np.array((row['majorlocation']), dtype=np.float32).reshape(1,)
             
             
-            # image_path = os.path.join(image_root, 'image', f'{patient_id}.nii')
-            # image_crop_path = os.path.join(image_root, 'image_crop', f'{patient_id}.nii')
+            image_path = os.path.join(image_root, 'image', f'{patient_id}.nii')
+            image_crop_path = os.path.join(image_root, 'image_crop', f'{patient_id}.nii')
             
             if task =='label':
                 label = float(patient_label)
-                # invol = float(patient_invol) # str change to float for having attribute 'cuda'
+                invol = float(patient_invol) # str change to float for having attribute 'cuda'
 
-            # image = sitk.GetArrayFromImage(sitk.ReadImage(str(image_path)))
-            # image_crop = sitk.GetArrayFromImage(sitk.ReadImage(str(image_crop_path)))
+            image = sitk.GetArrayFromImage(sitk.ReadImage(str(image_path)))
+            image_crop = sitk.GetArrayFromImage(sitk.ReadImage(str(image_crop_path)))
             
             self.dr.append(int(label))
 
-            patient = dict(id=patient_id,  images = images, label = label)
-            '''
-            patient = dict(id=patient_id,  images = images, age=patient_age, height=patient_height, weight=patient_weight,
-                      tpsa1=patient_tpsa1, tpsa2=patient_tpsa2, label = label)
-            '''
+            patient = dict(id=patient_id,  image = image, image_crop = image_crop, 
+                    invol = invol, label = label, meta_data = meta)
+            
             self.datas.append(patient)
 
 
     def __getitem__(self, index, is_train=True):
         
         _patient = self.datas[index]
-        images1 = _patient["images"]
-
-        images = []
-        # image_crop = _patient["image_crop"]
-        # image_crop = image_crop.astype(np.float32)
-        iamges_ = [np.float32(item) for item in images1]
-        label = _patient["label"]
-        #age = _patient["age"]
-        #age = float(age)
-        #age = torch.tensor(age)
-        #height = _patient["height"]
-        #height = float(height)
-        #height = torch.tensor(height)
-        #weight = _patient["weight"]
-        #weight = float(weight)
-        #weight = torch.tensor(weight)
-        #tpsa1 = _patient["tpsa1"]
-        #tpsa1 = float(tpsa1)
-        #tpsa1 = torch.tensor(tpsa1)
-        #tpsa2 = _patient["tpsa2"]
-        #tpsa2 = float(tpsa2)
-        #tpsa2 = torch.tensor(tpsa2)
-        # meta = _patient["meta_data"]
-        if self.transforms is not None and label == 1:
-            # image = apply_transform(self.transforms, img_normalize)
-            # image = torch.unsqueeze(image, dim=0)
-            for item in iamges_:
-                image = apply_transform(self.transforms, item)
-                # image = torch.unsqueeze(image, dim=0)
-                images.append(image)
-
-            # image_crop = apply_transform(self.transforms, image_crop)
-        else:
-            # image = torch.tensor(img_normalize)
-            # image = torch.unsqueeze(image, dim=0)
-            for item in iamges_:
-
-                image = torch.tensor(item)
-                # image = torch.unsqueeze(image, dim=0)
-                images.append(image)
-            # image_crop = torch.tensor(image_crop)
-            # image_crop = torch.unsqueeze(image_crop, dim=0)
-        img = resize_image(images, (8, 64, 64))
-        img = np.array(img)
-        img = img.astype(np.float32)
-        img_normalize = irm_min_max_preprocess(img)
-        dr = self.dr[index]
-        return  dict(patient_id = _patient["id"],
-                     all=img_normalize,
-                     label = label
-                    )
-        '''
-        return  dict(patient_id = _patient["id"],
-                     ADC=img_normalize[0:1], DWI=img_normalize[1:2], T2FS=img_normalize[2:3],CT=img_normalize[3:4],
-                     PET=img_normalize[4:5],
-                     all=img_normalize,
-                     label = label
-                    )
         
-        return  dict(patient_id = _patient["id"],age=age,height=height,weight=weight,tpsa1=tpsa1,tpsa2=tpsa2,
-                     ADC=img_normalize[0:1], DWI=img_normalize[1:2], T2FS=img_normalize[2:3],CT=img_normalize[3:4],
-                     PET=img_normalize[4:5],
-                     all=img_normalize,
-                     label = label
+        image = _patient["image"]
+        image = image.astype(np.float32)
+        image_crop = _patient["image_crop"]
+        image_crop = image_crop.astype(np.float32)
+        
+        label = _patient["label"]
+        meta = _patient["meta_data"]
+        
+        if self.transforms is not None and label == 1:
+            image = apply_transform(self.transforms, image)
+            image_crop = apply_transform(self.transforms, image_crop)
+        else:
+            image = torch.tensor(image)
+            image = torch.unsqueeze(image, dim=0)
+            image_crop = torch.tensor(image_crop)
+            image_crop = torch.unsqueeze(image_crop, dim=0)
+            
+        dr = self.dr[index]
+        
+        return  dict(patient_id = _patient["id"],
+                    image = image,
+                    image_crop = image_crop,
+                    label = label,
+                    invol = _patient["invol"],
+                    metadata = meta
                     )
-        return  dict(patient_id = _patient["id"],
-                 ADC=img_normalize[0:1], DWI=img_normalize[1:2], T2FS=img_normalize[2:3],
-                 all=img_normalize,
-                 label = label
-                )
 
-        return  dict(patient_id = _patient["id"],
-             CT=img_normalize[0:1], PET=img_normalize[1:2],
-             all=img_normalize,
-             label = label
-            )
-    '''
     def __len__(self):
         return len(self.datas)
 
 
-# 请确保文件最上面有这一行: import pandas as pd
-
 def get_dataset(data_root, cv_data_source, train_mode, seed=42, fold_number=0):
-    # --- 1. 基础路径配置 ---
-    image_path = data_root 
-    csv_path = os.path.join(data_root, 'qianliexian_clinical_isup.csv')
-    
-    # 这是我们之前生成的固定划分名单
-    split_csv_path = './dataset_split.csv' 
-    
-    print(f"正在加载数据: {csv_path}")
-    
-    # --- 2. 读取划分名单 (关键修改) ---
-    if not os.path.exists(split_csv_path):
-        raise FileNotFoundError("报错: 找不到 dataset_split.csv！请先运行 make_split.py 生成该文件。")
-    
-    # 读取 split 文件并转为字典 {id: fold}，方便快速查找
-    # (将 ID 转为 string 格式，防止与 csv 读取的类型不一致)
-    split_df = pd.read_csv(split_csv_path)
-    id_to_fold = dict(zip(split_df['id'].astype(str), split_df['fold']))
-    
-    # --- 3. 读取主 CSV 并根据名单分配 ---
-    train_list = []
-    val_list = []
-    
-    # 使用 utf-8-sig 防止 Windows CSV 的 BOM 乱码
-    with open(csv_path, encoding="utf-8-sig", mode="r") as f:
-        csv_reader = csv.DictReader(f)
 
-        for row in csv_reader:
-            pat_id = str(row['id']) # 获取当前病人的 ID
-            
-            # 检查这个病人在不在我们的名单里
-            if pat_id in id_to_fold:
-                pat_fold = id_to_fold[pat_id]
-                
-                # [核心逻辑] 
-                # 如果这个病人的 fold 编号 == 我们当前要跑的 fold_number，他是验证集
-                # 否则，他是训练集
-                if pat_fold == fold_number:
-                    val_list.append(row)
-                else:
-                    train_list.append(row)
-            else:
-                # 如果名单里没这个号(可能是被清洗掉的数据)，就跳过
-                pass
-
-    print(f"Fold {fold_number} 加载完毕: 训练集 {len(train_list)} 例, 验证集 {len(val_list)} 例")
+    fuyi_image_path = os.path.join(data_root, 'Fuyi')
+    fuyi_csv_path = os.path.join(data_root, 'Fuyi/fuyi.csv')
     
-    # --- 4. 创建 Dataset 对象 (保持原样) ---
-    train_dataset = bal_Dataset(image_path, train_list)
-    val_dataset = bal_Dataset(image_path, val_list)
-    
-    # --- 5. 数据增强 (保持你原来的设置) ---
-    train_transforms = Compose([
-            # 你的原始增强逻辑
-            RandAffine(prob=0.5, translate_range=(4, 10, 10), padding_mode="border"),
-            ToTensor()
-            ])
-    
-    val_transforms = Compose([
-             ToTensor()
-            ])
-    
-    train_dataset.transforms = train_transforms
-    val_dataset.transforms = val_transforms
-        
-    return train_dataset, val_dataset
+    tongji_image_path = os.path.join(data_root, 'Tongji')
+    tongji_csv_path = os.path.join(data_root, 'Tongji/tongji.csv')
 
+    fuyi_csv_file = []
+    with open(fuyi_csv_path, encoding="utf-8", mode="r") as f:
+        fuyi_csv_reader = csv.DictReader(f)
+        for row in fuyi_csv_reader:
+            fuyi_csv_file.append(row)
 
-def get_dataset1(data_root, cv_data_source, train_mode, seed=42, fold_number=0):
-
-    image_path1 = os.path.join(data_root, 'Dataset_five_N4_gamma')
-    image_path2 = os.path.join(data_root, 'Dataset_five_N4_gamma_rotation')
-    csv_path1 = os.path.join(data_root, 'Train_ISUP.csv')
-    csv_path2 = os.path.join(data_root, 'Train_ISUP_rotation.csv')
-
-
-    csv_file_1, csv_file_2 = [], []
-    with open(csv_path1, encoding="gbk", mode="r") as f:
-        csv_reader = csv.DictReader(f)
-
-        for row in csv_reader:
-            csv_file_1.append(row)
-
-    with open(csv_path2, encoding="gbk", mode="r") as f:
-        csv_reader = csv.DictReader(f)
-
-        for row in csv_reader:
-            csv_file_2.append(row)
+    tongji_csv_file = []
+    with open(tongji_csv_path, encoding="utf-8", mode="r") as f:
+        tongji_csv_reader = csv.DictReader(f)
+        for row in tongji_csv_reader:
+            tongji_csv_file.append(row)
             
     # Cross Validation
     if train_mode == 'Cross_Validation':
+        if cv_data_source == 'fuyi':
+            csv_file = fuyi_csv_file
+            image_path = fuyi_image_path
+        elif cv_data_source == 'tongji':
+            csv_file = tongji_csv_file
+            image_path = tongji_image_path
+        # Cross Validation
+        kfold = KFold(5, shuffle=True, random_state=seed)
+        splits = list(kfold.split(csv_file))
 
-        kfold = KFold(10, shuffle=True, random_state=seed)
-        splits_1 = list(kfold.split(csv_file_1))
-        splits_2 = list(kfold.split(csv_file_2))
-        train_idx_1, val_idx_1 = splits_1[fold_number]
-        train_idx_2, val_idx_2 = splits_2[fold_number]
-        
-        train_list = [csv_file_1[i] for i in train_idx_1] + [csv_file_2[i] for i in train_idx_2] 
-        val_list = [csv_file_1[i] for i in val_idx_1]
-        
-        train_dataset = bal_Dataset(image_path2, train_list)
-        val_dataset = bal_Dataset(image_path1, val_list)
+        # labels = [x['label'] for x in csv_file]
+        # KFold = StratifiedKFold(n_splits =5,random_state = seed, shuffle = True)
+        # splits = list(KFold.split(csv_file, labels))
 
+        train_index, val_index = splits[fold_number]
+        train_list = [csv_file[i] for i in train_index]
+        val_list = [csv_file[i] for i in val_index]
+        
+        train_dataset = bal_Dataset(image_path, train_list)
+        val_dataset = bal_Dataset(image_path, val_list)
+    
+    elif train_mode == 'tr_val':
+        
+        train_dataset = bal_Dataset(fuyi_image_path, fuyi_csv_file)
+        val_dataset = bal_Dataset(tongji_image_path, tongji_csv_file)
+
+    
+    elif train_mode == '7_3':
+        
+        if cv_data_source == 'fuyi':
+            csv_file = fuyi_csv_file
+            image_path = fuyi_image_path
+        elif cv_data_source == 'tongji':
+            csv_file = tongji_csv_file
+            image_path = tongji_image_path
+        # 按比例分
+        # 获取每种标签的行号,并洗牌
+        idx_0 = [i for i, x in enumerate(csv_file) if x['label'] == '0']
+        idx_1 = [i for i, x in enumerate(csv_file) if x['label'] == '1']
+        random.shuffle(idx_0)
+        random.shuffle(idx_1)
+        # 按比例划分数据集
+        train_idx = idx_0[:int(0.7 * len(idx_0))] + idx_1[:int(0.7 * len(idx_1))]
+        val_idx = idx_0[int(0.7 * len(idx_0)):] + idx_1[int(0.7 * len(idx_1)):]
+        
+        train_list = [csv_file[i] for i in train_idx]
+        val_list = [csv_file[i] for i in val_idx]
+        
+        train_dataset = bal_Dataset(image_path, train_list)
+        val_dataset = bal_Dataset(image_path, val_list)
+        
     train_transforms = Compose(
-            [#EnsureChannelFirst(),
-            RandAffine(prob=0.5, translate_range=(4, 10, 10), padding_mode="border"),
-            #RandFlip(prob=0.5),
-            #RandRotate90(prob=0.5, spatial_axes=(0,1)),
+            [EnsureChannelFirst(), 
+            # RandAffine(prob=0.5, translate_range=(4, 10, 10), padding_mode="border"),
+            RandFlip(prob=0.5), 
+            # RandRotate90(prob=0.5, spatial_axes=(1, 2)),
             ToTensor()
             ])
     
     val_transforms = Compose(
-            [#EnsureChannelFirst(),
+            [EnsureChannelFirst(), 
              ToTensor()
             ])
     
@@ -319,6 +179,7 @@ def get_dataset1(data_root, cv_data_source, train_mode, seed=42, fold_number=0):
     val_dataset.transforms = val_transforms
         
     return train_dataset,val_dataset
+
 
 # get_dataset('/nfs/wzy/CODE/classification/all/data/qlg')
 
