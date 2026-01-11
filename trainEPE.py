@@ -30,7 +30,7 @@ parser.add_argument('--batch_size', type=int, default=16, help='training batch s
 parser.add_argument('--data_root', type=str,
                     default='/Dataset/yyp/prostate_ISUP_data/code/Dataset', help='path to train dataset')
 parser.add_argument('--train_save', type=str, default='TransFuse_S')
-parser.add_argument('--devices', default='1', type=str,
+parser.add_argument('--devices', default='3', type=str,
                     help='Set the CUDA_VISIBLE_DEVICES env var from this string') # 输入空的GPU的编号0-7 --device 0-7
 parser.add_argument('-j', '--workers', default=8, type=int, metavar='N',
                     help='number of data loading workers (default: 2).')
@@ -41,7 +41,7 @@ parser.add_argument('--weights', type=str, default='best_model50.pth',
 
 parser.add_argument('--sampling', type=str, default='instance', help='sampling mode (instance, class, sqrt, progmultiprocessing)')
 parser.add_argument('--loss', choices=['BinaryFocalLoss', 'GHMC_Loss', 'WBCEWithLogitLoss','CrossEntropyLoss','WCrossEntropyLoss','LabelSmoothing'], default='CrossEntropyLoss')
-parser.add_argument('--model', choices=['MobileNet', 'MobileNetV3_Small', 'MobileNetV3_Large', 'ShuffleNet', 'DenseNet', 'resnet10', 'resnet18', 'resnet34','resnet50','resnet101','C3D', 'CNN_3D','Att_CNN_3D','LeNet', 'AlexNet','vit','resnext50','Resnext50','cotnet50','resnext101','vgg','SwinTransformer','Densenet36_fgpn'], default='resnet50')
+parser.add_argument('--model', choices=['MobileNet', 'MobileNetV3_Small', 'MobileNetV3_Large', 'ShuffleNet', 'DenseNet', 'resnet10', 'resnet18', 'resnet34','resnet50','resnet101','C3D', 'CNN_3D','Att_CNN_3D','LeNet', 'AlexNet','vit','resnext50','Resnext50','cotnet50','resnext101','vgg','SwinTransformer','Densenet36_fgpn'], default='Densenet36_fgpn')
 parser.add_argument('--model_cla', choices=['MobileNet', 'resnet10', 'resnet18', 'resnet34','resnet50','resnet101','C3D', 'CNN_3D','Att_CNN_3D','LeNet', 'AlexNet','vit'], default='vit')
 # parser.add_argument('--fusion_type', choices=['FeatureFusion', 'LearnedFeatureFusion', 'ProbabilityFusion', 'resnet_3d'], default='resnet_3d')
 parser.add_argument('--attention', choices=['se','cbam', 'nam','AFF','false'], default='false')
@@ -61,7 +61,7 @@ def main(args):
                     f"_lr{args.lr}_epochs{args.epoch}"
     
     # args.save_folder = pathlib.Path(f"/nfs/wzy/CODE/pse/result/good/fuyi/8.18/resnet34/{args.exp_name}") # 存结果
-    args.save_folder = pathlib.Path(f"/Dataset/yyp/prostate_ISUP_data/code/result/Dataset_crop_N4_gamma/RandAffine_3c_1"
+    args.save_folder = pathlib.Path(f"/Dataset/yyp/prostate_ISUP_data/code/result/Dataset_crop_N4_gamma/RandAffine_68"
                                     f"/{args.exp_name}")
     args.save_folder.mkdir(parents=True, exist_ok=True)
     save_args(args)
@@ -225,7 +225,7 @@ def step(args, data_loader, model, loss_function, optimizer, epoch, batchsize, s
     _loss = 0.0
     _acc = 0.0
     labels_list, outputs_list, results_list = [], [], []
-    num_samples_2, num_samples_1, num_samples_0 = 0, 0, 0
+    num_samples_1, num_samples_0 = 0, 0
     
     mode = "train" if model.training else "val"
     with trange(len(data_loader)) as t:
@@ -283,7 +283,6 @@ def step(args, data_loader, model, loss_function, optimizer, epoch, batchsize, s
             labels_list.append(labels.cpu().numpy()[0])
             results_list.append(predict.cpu().numpy()[0])
             outputs_list.append(outputs[0][1].item())
-            num_samples_2 += torch.sum(labels == 2).item()
             num_samples_1 += torch.sum(labels == 1).item()
             num_samples_0 += torch.sum(labels == 0).item()
             t.update()
@@ -291,10 +290,10 @@ def step(args, data_loader, model, loss_function, optimizer, epoch, batchsize, s
         _acc = _acc / (steps * batchsize)
         _loss = _loss / steps
         t.set_postfix(loss=_loss)
-        tqdm.write(f"num_samples_2 = {num_samples_2}, num_samples_1 = {num_samples_1}, num_samples_0 = {num_samples_0}")
+        tqdm.write(f"num_samples_1 = {num_samples_1}, num_samples_0 = {num_samples_0}")
         return _loss, _acc, labels_list, results_list, outputs_list
 
-'''
+
 def measure(labels, results, outputs , args):
     train_folder = args.save_folder / "train"
     train_folder.mkdir(parents=True, exist_ok=True)
@@ -333,53 +332,6 @@ def measure(labels, results, outputs , args):
     
     # writeROC(outputs, labels, f'{args.save_folder}', args.fold)
     PR_curve(outputs,labels,f'{train_folder}', args.fold)
-'''
-def measure(labels, results, outputs, args):
-    train_folder = args.save_folder / "train"
-    train_folder.mkdir(parents=True, exist_ok=True)
-    
-    # 计算混淆矩阵
-    cmatrix = mts.confusion_matrix(labels, results)
-    
-    # 提取混淆矩阵中的各项值
-    FP = cmatrix[0][1]
-    FN = cmatrix[0][2]
-    TP = cmatrix[1][1]
-    TN = cmatrix[1][2]
-
-    # 计算评估指标
-    acc = mts.accuracy_score(labels, results)
-    recall = mts.recall_score(labels, results, average='macro')
-    PPV = TP / (TP + FP + 1e-6)
-    NPV = TN / (TN + FN + 1e-6)
-    f1_score = mts.f1_score(labels, results, average='macro')
-    kappa_score = mts.cohen_kappa_score(labels, results)
-    sensitivity = sensitivityCalc(labels, results)
-    specificity = specificityCalc(labels, results)
-
-    # 将评估指标保存到字典中
-    fin_result = dict(
-        accuracy=acc, recall=recall, f1_score=f1_score, kappa_score=kappa_score,
-        sensitivity=sensitivity, specificity=specificity, PPV_score=PPV, NPV_score=NPV
-    )
-    
-    # 保存评估结果到 CSV 文件
-    save_csv = os.path.join(train_folder, f"result_fold{args.fold}.csv")
-    with open(save_csv, mode='a', encoding='utf-8', newline='') as f:
-        csv_writer = csv.DictWriter(f, fieldnames=['accuracy', 'recall', 'f1_score', 'kappa_score', 'sensitivity',
-                                                    'specificity', 'PPV_score', 'NPV_score'])
-        csv_writer.writeheader()
-        csv_writer.writerow(fin_result)
-    
-    # 打印评估结果
-    print('accuracy: %.3f  recall: %.3f  f1_score: %.3f kappa_score: %.3f sensitivity: %.3f specificity: %.3f PPV: %.3f NPV: %.3f' %
-            (acc, recall, f1_score, kappa_score, sensitivity, specificity, PPV, NPV))
-    
-    # 保存混淆矩阵
-    save_confusion_matrix(cmatrix, ['0', '1', '2'], f'{train_folder}', args.fold)
-    
-    # 绘制 PR 曲线
-    #PR_curve(outputs, labels, f'{train_folder}', args.fold)
 
 if __name__ == '__main__':
     arguments = parser.parse_args()
