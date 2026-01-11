@@ -94,7 +94,7 @@ def generate_result(data_loader, model, args):
         
         with torch.no_grad():
             #output, _ = model(images)
-            output = model(images.float())
+            output = model(images)
            #output, _ = model(images,meta=meta)
             # feature1 = feature1.cpu()
             # feature1 = feature1.numpy()
